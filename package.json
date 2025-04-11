@@ -1,0 +1,22 @@
+{
+  "name": "userbot-gcast",
+  "version": "1.0.0",
+  "description": "Userbot Telegram untuk Gcast ke grup/channel dengan whitelist ID",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "telegram",
+    "userbot",
+    "gcast",
+    "broadcast"
+  ],
+  "author": "YourName",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "telegram": "*",
+    "input": "^1.0.1"
+  }
+}
