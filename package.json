@@ -16,7 +16,8 @@
   "license": "MIT",
   "dependencies": {
     "dotenv": "^16.4.5",
-    "telegram": "*",
-    "input": "^1.0.1"
+    "input": "^1.0.1",
+    "mongodb": "^6.15.0",
+    "telegram": "*"
   }
 }

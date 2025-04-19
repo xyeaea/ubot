@@ -5,6 +5,7 @@ const input = require("input");
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const connectDB = require("./database/connect");
 
 const apiId = parseInt(process.env.API_ID);
 const apiHash = process.env.API_HASH;
@@ -18,7 +19,6 @@ const client = new TelegramClient(stringSession, apiId, apiHash, {
   connectionRetries: 5,
 });
 
-// WHITELIST berupa array angka (tanpa newline)
 const whitelistIds = process.env.WHITELIST_IDS
   ? process.env.WHITELIST_IDS.split(",").map((id) => parseInt(id.trim()))
   : [];
@@ -32,6 +32,11 @@ async function loadDialogs() {
 }
 
 (async () => {
+  const db = await connectDB();
+  const pmCollection = db.collection("pm_messages");
+  const statusCollection = db.collection("pm_status");
+  const historyCollection = db.collection("pm_history");
+
   await client.start({
     phoneNumber: async () => await input.text("Masukkan nomor HP: "),
     password: async () => await input.text("Masukkan password 2FA (jika ada): "),
@@ -45,7 +50,6 @@ async function loadDialogs() {
 
   await loadDialogs();
 
-  // Load commands
   const commands = new Map();
   const commandsPath = path.join(__dirname, "commands");
   if (fs.existsSync(commandsPath)) {
@@ -56,10 +60,8 @@ async function loadDialogs() {
     }
   }
 
-  // Event listener untuk command di saved message
   client.addEventHandler(async (event) => {
     const message = event.message;
-
     if (!message.message || !message.message.startsWith(".")) return;
 
     const senderId = parseInt(String(message.senderId).trim());
@@ -76,7 +78,7 @@ async function loadDialogs() {
     }
 
     try {
-      await runCommand({ client, message, args, dialogsCache });
+      await runCommand({ client, message, args, dialogsCache, pmCollection, statusCollection });
     } catch (err) {
       console.error("Error saat menjalankan command:", err.message);
       await client.sendMessage(message.chatId, {
@@ -85,5 +87,39 @@ async function loadDialogs() {
     }
   }, new NewMessage({}));
 
-  console.log("Userbot siapmenerima command...");
+  // Auto-PM Handler
+  client.addEventHandler(async (event) => {
+    const msg = event.message;
+    const senderId = msg.senderId?.value;
+    if (!senderId || msg.out || msg.isChannel || msg.isGroup) return;
+
+    const status = await statusCollection.findOne({ _id: "pm_status" });
+    if (!status || status.status !== "on") return;
+
+    const history = await historyCollection.findOne({ userId: senderId });
+    const now = Date.now();
+
+    if (history && now - history.lastReply < 24 * 60 * 60 * 1000) return;
+
+    const lastMessage = await pmCollection.findOne({}, { sort: { _id: -1 } });
+    if (!lastMessage) return;
+
+    try {
+      await client.sendMessage(senderId, {
+        message: lastMessage.text,
+        parseMode: "html",
+        ...(lastMessage.replyMarkup ? { replyMarkup: lastMessage.replyMarkup } : {}),
+      });
+
+      await historyCollection.updateOne(
+        { userId: senderId },
+        { $set: { userId: senderId, lastReply: now } },
+        { upsert: true }
+      );
+    } catch (err) {
+      console.error("Gagal kirim PM:", err.message);
+    }
+  }, new NewMessage({ incoming: true }));
+
+  console.log("Userbot siap menerima command...");
 })();
